@@ -42,6 +42,7 @@ function accountRow(login, store) {
     account_company: a.account_company || '',
     approved: a.approved ? 1 : 0,
     expire_iso: a.expire_iso || '',
+    first_seen_at: a.first_seen_at || a.updated_at || '',
     notes: a.notes || '',
     updated_at: a.updated_at || '',
   };
@@ -120,11 +121,13 @@ class Statement {
 
     if (sql.includes('INSERT INTO accounts')) {
       const [login, name, company, approved, expire, notes, updated] = params;
+      const extra = params.length >= 8 ? params[7] : updated;
       s.accounts[String(login)] = {
         account_name: name,
         account_company: company,
         approved: !!approved,
         expire_iso: expire,
+        first_seen_at: extra,
         notes: notes || '',
         updated_at: updated,
       };
@@ -202,6 +205,14 @@ class JsonDatabase {
 
   prepare(sql) {
     return new Statement(this, sql);
+  }
+
+  patchAccount(login, patch) {
+    const key = String(login);
+    if (!this.store.accounts[key]) return false;
+    Object.assign(this.store.accounts[key], patch);
+    this.save();
+    return true;
   }
 
   pragma() {

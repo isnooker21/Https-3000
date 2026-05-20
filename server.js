@@ -11,6 +11,8 @@ const API_KEY = process.env.API_KEY || '';
 const ADMIN_USER = process.env.ADMIN_USER || 'admin';
 const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || '';
 const DEFAULT_TRIAL_DAYS = Number(process.env.DEFAULT_TRIAL_DAYS || 7);
+const TRIAL_DAYS_APPROVED = Number(process.env.TRIAL_DAYS_APPROVED || 7);
+const UNAPPROVED_GRACE_DAYS = Number(process.env.UNAPPROVED_GRACE_DAYS || 1);
 const DB_PATH = process.env.DATABASE_PATH || './data/platform.json';
 const LOGS_DIR = path.join(__dirname, 'data', 'logs');
 
@@ -63,7 +65,34 @@ function getAccount(login) {
   return db.prepare('SELECT * FROM accounts WHERE account_login = ?').get(str(login));
 }
 
-function upsertAccountFromQuery(q, trialDays) {
+function isApproved(acc) {
+  return acc && (acc.approved === 1 || acc.approved === true);
+}
+
+/** ไม่กดเปิด: หมดอายุ first_seen + 1 วัน | กดเปิด: +7 วันจากวันอนุมัติ */
+function syncExpiryPolicy(login) {
+  const key = str(login);
+  const row = db.prepare('SELECT * FROM accounts WHERE account_login = ?').get(key);
+  if (!row) return;
+
+  const now = new Date();
+  const firstSeen = row.first_seen_at ? new Date(row.first_seen_at) : now;
+
+  if (isApproved(row)) {
+    return;
+  }
+
+  const cap = new Date(firstSeen);
+  cap.setUTCDate(cap.getUTCDate() + UNAPPROVED_GRACE_DAYS);
+  const capIso = cap.toISOString().replace(/\.\d{3}Z$/, 'Z');
+
+  const current = row.expire_iso ? new Date(row.expire_iso) : cap;
+  if (current > cap) {
+    db.patchAccount(key, { expire_iso: capIso, updated_at: now.toISOString() });
+  }
+}
+
+function upsertAccountFromQuery(q) {
   const login = str(q.account_login);
   if (!login) return null;
 
@@ -71,18 +100,31 @@ function upsertAccountFromQuery(q, trialDays) {
   const existing = getAccount(login);
 
   if (!existing) {
-    const expire = defaultExpireIso(trialDays);
+    const expireUnapproved = defaultExpireIso(UNAPPROVED_GRACE_DAYS);
     db.prepare(`
       INSERT INTO accounts (account_login, account_name, account_company, approved, expire_iso, notes, updated_at)
       VALUES (?, ?, ?, 0, ?, 'auto_created', ?)
-    `).run(login, str(q.account_name), str(q.account_company), expire, now);
+    `).run(
+      login,
+      str(q.account_name),
+      str(q.account_company),
+      expireUnapproved,
+      'auto_created',
+      now,
+      now,
+    );
     return getAccount(login);
+  }
+
+  if (!existing.first_seen_at) {
+    db.patchAccount(login, { first_seen_at: now });
   }
 
   db.prepare(`
     UPDATE accounts SET account_name = ?, account_company = ?, updated_at = ? WHERE account_login = ?
   `).run(str(q.account_name), str(q.account_company), now, login);
 
+  syncExpiryPolicy(login);
   return getAccount(login);
 }
 
@@ -115,11 +157,11 @@ app.get('/', eaAuth, (req, res) => {
 app.post('/', eaAuth, (req, res) => handleLogsPost(req, res));
 
 function handleLicense(req, res) {
-  const trialDays = parseInt(req.query.trial_expire_in_days || DEFAULT_TRIAL_DAYS, 10) || DEFAULT_TRIAL_DAYS;
   const login = req.query.account_login;
   if (!login) return res.status(400).type('text/plain').send('error,Missing account_login');
 
-  upsertAccountFromQuery(req.query, trialDays);
+  upsertAccountFromQuery(req.query);
+  syncExpiryPolicy(login);
   const acc = getAccount(login);
   res.type('text/plain').send(legacyLicenseResponse(acc));
 }
@@ -144,7 +186,7 @@ function handleDaily(req, res) {
     now,
   );
 
-  upsertAccountFromQuery(req.query, DEFAULT_TRIAL_DAYS);
+  upsertAccountFromQuery(req.query);
   res.json({ ok: true, saved: true });
 }
 
@@ -234,8 +276,17 @@ app.patch('/admin/api/accounts/:login', adminAuth, express.json(), (req, res) =>
   const now = new Date().toISOString();
 
   if (approved !== undefined) {
-    db.prepare('UPDATE accounts SET approved = ?, updated_at = ? WHERE account_login = ?')
-      .run(approved ? 1 : 0, now, login);
+    const patch = {
+      approved: !!approved,
+      updated_at: now,
+      notes: approved ? 'approved_by_admin' : 'locked_by_admin',
+    };
+    if (approved) {
+      patch.expire_iso = defaultExpireIso(TRIAL_DAYS_APPROVED);
+    } else {
+      patch.expire_iso = defaultExpireIso(UNAPPROVED_GRACE_DAYS);
+    }
+    db.patchAccount(login, patch);
   }
   if (expire_iso !== undefined) {
     db.prepare('UPDATE accounts SET expire_iso = ?, updated_at = ? WHERE account_login = ?')
@@ -246,6 +297,7 @@ app.patch('/admin/api/accounts/:login', adminAuth, express.json(), (req, res) =>
       .run(str(notes), now, login);
   }
 
+  syncExpiryPolicy(login);
   res.json({ ok: true, account: getAccount(login) });
 });
 
