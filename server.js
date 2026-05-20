@@ -10,8 +10,7 @@ const HOST = process.env.HOST || '0.0.0.0';
 const API_KEY = process.env.API_KEY || '';
 const ADMIN_USER = process.env.ADMIN_USER || 'admin';
 const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || '';
-const DEFAULT_TRIAL_DAYS = Number(process.env.DEFAULT_TRIAL_DAYS || 7);
-/** ลูกค้าติดตั้งใหม่ (ยังไม่กดเปิด): ใช้ได้กี่วันจาก first_seen */
+/** ยังไม่กดเปิด: ทดลอง INSTALL_TRIAL_DAYS วันจาก first_seen | กดเปิด: ตลอดอายุ */
 const INSTALL_TRIAL_DAYS = Number(process.env.INSTALL_TRIAL_DAYS || 7);
 /** กดเปิดแล้ว: หมดอายุชั่วคราว (EA อ่านเป็น approved=true) */
 const LIFETIME_EXPIRE_ISO = process.env.LIFETIME_EXPIRE_ISO || '2099-12-31T23:59:59Z';
@@ -77,22 +76,28 @@ function isApproved(acc) {
   return acc && (acc.approved === 1 || acc.approved === true);
 }
 
-/** ยังไม่กดเปิด: ไม่เกิน first_seen + INSTALL_TRIAL_DAYS | กดเปิดแล้ว: ไม่แตะ expire */
+function isoNow(offsetSec = 0) {
+  const d = new Date();
+  if (offsetSec) d.setUTCSeconds(d.getUTCSeconds() + offsetSec);
+  return d.toISOString().replace(/\.\d{3}Z$/, 'Z');
+}
+
+function trialExpireIso(firstSeenIso) {
+  const firstSeen = firstSeenIso ? new Date(firstSeenIso) : new Date();
+  const cap = new Date(firstSeen);
+  cap.setUTCDate(cap.getUTCDate() + INSTALL_TRIAL_DAYS);
+  return cap.toISOString().replace(/\.\d{3}Z$/, 'Z');
+}
+
+/** ยังไม่กดเปิด: ไม่เกิน first_seen + 7 วัน | กดเปิดแล้ว: ไม่แตะ expire */
 function syncExpiryPolicy(login) {
   const key = str(login);
   const row = db.prepare('SELECT * FROM accounts WHERE account_login = ?').get(key);
-  if (!row) return;
-
-  if (isApproved(row)) {
-    return;
-  }
+  if (!row || isApproved(row)) return;
 
   const now = new Date();
-  const firstSeen = row.first_seen_at ? new Date(row.first_seen_at) : now;
-  const cap = new Date(firstSeen);
-  cap.setUTCDate(cap.getUTCDate() + INSTALL_TRIAL_DAYS);
-  const capIso = cap.toISOString().replace(/\.\d{3}Z$/, 'Z');
-
+  const capIso = trialExpireIso(row.first_seen_at);
+  const cap = new Date(capIso);
   const current = row.expire_iso ? new Date(row.expire_iso) : cap;
   if (current > cap) {
     db.patchAccount(key, { expire_iso: capIso, updated_at: now.toISOString() });
@@ -135,17 +140,16 @@ function upsertAccountFromQuery(q) {
   const meta = accountMetaFromQuery(q, existing);
 
   if (!existing) {
-    const expireTrial = defaultExpireIso(INSTALL_TRIAL_DAYS);
     db.prepare(`
       INSERT INTO accounts (account_login, account_name, account_company, approved, expire_iso, notes, updated_at)
-      VALUES (?, ?, ?, 0, ?, 'auto_created', ?)
+      VALUES (?, ?, ?, ?, ?, ?, ?)
     `).run(
       login,
       meta.account_name,
       meta.account_company,
-      expireTrial,
+      0,
+      defaultExpireIso(INSTALL_TRIAL_DAYS),
       'auto_created',
-      now,
       now,
     );
     db.patchAccount(login, { ...meta, first_seen_at: now });
@@ -232,14 +236,18 @@ function accountLicenseStatus(acc) {
     };
   }
   if (exp && exp > now) {
-    return { key: 'trial', label: 'ทดลองใช้งาน — รอการอนุมัติ', can_use_ea: true };
+    return {
+      key: 'trial',
+      label: `ทดลอง ${INSTALL_TRIAL_DAYS} วัน — รออนุมัติ`,
+      can_use_ea: true,
+    };
   }
-  return { key: 'expired', label: 'หมดอายุหรือถูกปิด — ติดต่อผู้ดูแล', can_use_ea: false };
+  return { key: 'expired', label: 'หมดอายุ — ติดต่อผู้ดูแล', can_use_ea: false };
 }
 
 function legacyLicenseResponse(acc) {
   const approved = acc && (acc.approved === 1 || acc.approved === true);
-  const expire = (acc && acc.expire_iso) || defaultExpireIso(DEFAULT_TRIAL_DAYS);
+  const expire = (acc && acc.expire_iso) || defaultExpireIso(INSTALL_TRIAL_DAYS);
   const name = (acc && acc.account_name) || '';
   const login = (acc && acc.account_login) || '';
   return ['ok', 'ea_platform', login, name, expire, approved ? 'true' : 'false'].join(',');
@@ -395,12 +403,8 @@ app.patch('/admin/api/accounts/:login', adminAuth, express.json(), (req, res) =>
     if (approved) {
       patch.expire_iso = LIFETIME_EXPIRE_ISO;
     } else {
-      const row = getAccount(login);
-      const firstSeen = row && row.first_seen_at ? new Date(row.first_seen_at) : new Date();
-      const end = new Date(firstSeen);
-      end.setUTCDate(end.getUTCDate() + INSTALL_TRIAL_DAYS);
-      const nowDt = new Date();
-      patch.expire_iso = (nowDt < end ? end : nowDt).toISOString().replace(/\.\d{3}Z$/, 'Z');
+      patch.expire_iso = isoNow(-60);
+      patch.notes = 'locked_by_admin';
     }
     db.patchAccount(login, patch);
   }

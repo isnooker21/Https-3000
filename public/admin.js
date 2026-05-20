@@ -53,8 +53,8 @@
       const lifetime = (a.expire_iso || '').startsWith('2099');
       return { key: 'approved', label: lifetime ? 'เปิด — ตลอดอายุ' : 'เปิดใช้งาน', badge: 'badge-ok' };
     }
-    if (exp && exp > now) return { key: 'trial', label: 'ทดลอง / รออนุมัติ', badge: 'badge-warn' };
-    return { key: 'expired', label: 'หมดอายุ / ปิด', badge: 'badge-bad' };
+    if (exp && exp > now) return { key: 'trial', label: 'ทดลอง 7 วัน', badge: 'badge-warn' };
+    return { key: 'expired', label: 'หมดอายุ', badge: 'badge-bad' };
   }
 
   async function api(path, opts = {}) {
