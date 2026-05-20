@@ -4,136 +4,179 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>EA Platform — Admin</title>
-  <style>
-    :root { --bg: #0f1419; --card: #1a2332; --text: #e7ecf3; --muted: #8b9cb3; --accent: #3b82f6; --ok: #22c55e; --bad: #ef4444; }
-    * { box-sizing: border-box; }
-    body { font-family: system-ui, sans-serif; background: var(--bg); color: var(--text); margin: 0; padding: 1.5rem; }
-    h1 { font-size: 1.25rem; margin: 0 0 1rem; }
-    .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 1rem; margin-bottom: 1.5rem; }
-    .card { background: var(--card); border-radius: 10px; padding: 1rem; }
-    .card .label { color: var(--muted); font-size: 0.75rem; }
-    .card .value { font-size: 1.5rem; font-weight: 600; margin-top: 0.25rem; }
-    table { width: 100%; border-collapse: collapse; background: var(--card); border-radius: 10px; overflow: hidden; font-size: 0.85rem; }
-    th, td { padding: 0.6rem 0.75rem; text-align: left; border-bottom: 1px solid #2a3548; }
-    th { color: var(--muted); font-weight: 500; }
-    button { background: var(--accent); color: #fff; border: 0; padding: 0.35rem 0.65rem; border-radius: 6px; cursor: pointer; font-size: 0.8rem; }
-    button.off { background: #4b5563; }
-    .err { color: var(--bad); margin: 1rem 0; }
-    .hint { color: var(--muted); font-size: 0.8rem; margin-bottom: 1rem; }
-    section { margin-bottom: 2rem; }
-  </style>
+  <link rel="stylesheet" href="/admin.css" />
 </head>
 <body>
-  <h1>EA Platform — Admin</h1>
-  <p class="hint">เข้าด้วยรหัสจากไฟล์ <code>.env</code> (ADMIN_USER / ADMIN_PASSWORD) — เบราว์เซอร์จะถามเมื่อโหลดข้อมูล</p>
-  <div id="err" class="err" hidden></div>
+  <div class="app">
+    <aside class="sidebar">
+      <div class="brand">
+        <h1>EA Platform</h1>
+        <p>แผงควบคุม Operator</p>
+      </div>
+      <nav class="nav">
+        <button type="button" data-page="dashboard" class="active">แดชบอร์ด</button>
+        <button type="button" data-page="accounts">บัญชี EA</button>
+        <button type="button" data-page="daily">รายงานรายวัน</button>
+        <button type="button" data-page="logs">ML Logs</button>
+        <button type="button" data-page="system">ระบบ</button>
+      </nav>
+      <div class="sidebar-footer">
+        <a href="/panel.html" target="_blank" rel="noopener" style="color:var(--accent);font-size:0.8rem">หน้าโปรโมต (สาธารณะ)</a><br />
+        อัปเดตล่าสุด:<br />
+        <span id="lastRefresh">—</span>
+      </div>
+    </aside>
 
-  <div class="grid" id="summary"></div>
+    <main class="main">
+      <div id="globalErr" class="alert alert-error" hidden></div>
 
-  <section>
-    <h2 style="font-size:1rem;">บัญชี (เปิด/ปิด EA)</h2>
-    <table>
-      <thead>
-        <tr>
-          <th>Login</th>
-          <th>ชื่อ</th>
-          <th>Broker</th>
-          <th>Approved</th>
-          <th>หมดอายุ</th>
-          <th></th>
-        </tr>
-      </thead>
-      <tbody id="accounts"></tbody>
-    </table>
-  </section>
+      <div class="alert alert-info">
+        การ <strong>ปิด</strong> บัญชีมีผลหลัง EA ตรวจ license รอบถัดไป (~24 ชม. GMT) — ลูกค้าติดตั้งใหม่ได้ทดลอง 7 วันก่อนอนุมัติ · กด <strong>เปิด</strong> = ใช้ได้ตลอดอายุ
+      </div>
 
-  <section>
-    <h2 style="font-size:1rem;">รายงานรายวันล่าสุด</h2>
-    <table>
-      <thead>
-        <tr><th>วันที่ GMT</th><th>Login</th><th>EA</th><th>Balance</th><th>Equity</th><th>Profit</th></tr>
-      </thead>
-      <tbody id="daily"></tbody>
-    </table>
-  </section>
+      <!-- Dashboard -->
+      <section id="page-dashboard" class="page active">
+        <header class="page-header">
+          <div>
+            <h2>แดชบอร์ด</h2>
+            <p class="sub">ภาพรวมบัญชีและรายงานวันนี้ (GMT)</p>
+          </div>
+          <button type="button" class="btn" id="btnRefresh">รีเฟรช</button>
+        </header>
+        <div class="kpi-grid" id="kpiGrid"></div>
+        <div class="panel">
+          <div class="panel-head">Balance รวมตามวัน (14 วันล่าสุด)</div>
+          <div class="chart-bars" id="balanceChart"></div>
+        </div>
+      </section>
 
-  <section>
-    <h2 style="font-size:1rem;">Log uploads</h2>
-    <table>
-      <thead>
-        <tr><th>วันที่</th><th>Login</th><th>EA</th><th>บรรทัด</th><th>ไฟล์</th></tr>
-      </thead>
-      <tbody id="logs"></tbody>
-    </table>
-  </section>
+      <!-- Accounts -->
+      <section id="page-accounts" class="page">
+        <header class="page-header">
+          <div>
+            <h2>บัญชี EA</h2>
+            <p class="sub">เปิด / ปิดการใช้งานต่อเลขบัญชี MT5</p>
+          </div>
+          <div class="toolbar">
+            <input type="search" id="accSearch" placeholder="ค้นหา login, ชื่อ, broker…" />
+            <select id="accFilter">
+              <option value="all">ทุกสถานะ</option>
+              <option value="approved">เปิดใช้งาน</option>
+              <option value="trial">ทดลอง / รออนุมัติ</option>
+              <option value="expired">หมดอายุ / ปิด</option>
+            </select>
+          </div>
+        </header>
+        <div class="panel">
+          <div class="table-wrap">
+            <table class="data">
+              <thead>
+                <tr>
+                  <th>Login</th>
+                  <th>ชื่อ</th>
+                  <th>Broker</th>
+                  <th>สถานะ</th>
+                  <th>หมดอายุ</th>
+                  <th>ติดตั้งครั้งแรก</th>
+                  <th></th>
+                </tr>
+              </thead>
+              <tbody id="accountsBody"></tbody>
+            </table>
+          </div>
+        </div>
+      </section>
 
-  <script>
-    async function api(path, opts = {}) {
-      const r = await fetch(path, { credentials: 'include', ...opts });
-      if (!r.ok) throw new Error(await r.text() || r.statusText);
-      return r.json();
-    }
+      <!-- Daily -->
+      <section id="page-daily" class="page">
+        <header class="page-header">
+          <div>
+            <h2>รายงานรายวัน</h2>
+            <p class="sub">Snapshot จาก EA วันละครั้ง (GMT)</p>
+          </div>
+          <input type="text" id="dailyLoginFilter" placeholder="กรองตาม login…" />
+        </header>
+        <div class="panel">
+          <div class="table-wrap">
+            <table class="data">
+              <thead>
+                <tr>
+                  <th>วันที่ GMT</th>
+                  <th>Login</th>
+                  <th>EA</th>
+                  <th class="num">Balance</th>
+                  <th class="num">Equity</th>
+                  <th class="num">Profit</th>
+                </tr>
+              </thead>
+              <tbody id="dailyBody"></tbody>
+            </table>
+          </div>
+        </div>
+      </section>
 
-    function showErr(msg) {
-      const el = document.getElementById('err');
-      el.textContent = msg;
-      el.hidden = !msg;
-    }
+      <!-- Logs -->
+      <section id="page-logs" class="page">
+        <header class="page-header">
+          <div>
+            <h2>ML Log uploads</h2>
+            <p class="sub">ไฟล์ CSV บนเซิร์ฟเวอร์ (ดาวน์โหลดผ่าน VPS โดยตรง)</p>
+          </div>
+        </header>
+        <div class="panel">
+          <div class="table-wrap">
+            <table class="data">
+              <thead>
+                <tr>
+                  <th>วันที่</th>
+                  <th>Login</th>
+                  <th>EA</th>
+                  <th class="num">บรรทัด</th>
+                  <th>ไฟล์</th>
+                </tr>
+              </thead>
+              <tbody id="logsBody"></tbody>
+            </table>
+          </div>
+        </div>
+      </section>
 
-    function renderSummary(s) {
-      document.getElementById('summary').innerHTML = [
-        ['บัญชีทั้งหมด', s.accounts_total],
-        ['อนุมัติแล้ว', s.accounts_approved],
-        ['รายงานวันนี้', s.reported_today],
-        ['Balance รวมวันนี้', s.total_balance_today.toFixed(2)],
-        ['Log uploads', s.log_uploads_total],
-      ].map(([label, value]) =>
-        `<div class="card"><div class="label">${label}</div><div class="value">${value}</div></div>`
-      ).join('');
-    }
+      <!-- System -->
+      <section id="page-system" class="page">
+        <header class="page-header">
+          <div>
+            <h2>ระบบ</h2>
+            <p class="sub">สถานะเซิร์ฟเวอร์และการตั้งค่า</p>
+          </div>
+        </header>
+        <div class="panel">
+          <div class="panel-head">Server health</div>
+          <div class="modal-body">
+            <p id="healthStatus">กำลังตรวจสอบ…</p>
+            <button type="button" class="btn btn-ghost btn-sm" id="btnHealth" style="margin-top:0.75rem">ตรวจสอบอีกครั้ง</button>
+          </div>
+        </div>
+        <div class="panel">
+          <div class="panel-head">การเข้าสู่ระบบ</div>
+          <div class="modal-body" style="font-size:0.88rem;color:var(--muted)">
+            <p>ใช้ HTTP Basic จากไฟล์ <code>.env</code> — <code>ADMIN_USER</code> / <code>ADMIN_PASSWORD</code></p>
+            <p style="margin-top:0.5rem">EA ใช้ <code>API_KEY</code> ใน header หรือ query — ไม่แสดงบนหน้านี้</p>
+          </div>
+        </div>
+      </section>
+    </main>
+  </div>
 
-    async function toggleApproved(login, current) {
-      await api(`/admin/api/accounts/${login}`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ approved: !current }),
-      });
-      await load();
-    }
+  <div id="accountModal" class="modal-backdrop" hidden>
+    <div class="modal modal-lg">
+      <div class="modal-head">
+        <h3 id="modalTitle">บัญชี</h3>
+        <button type="button" class="btn btn-ghost btn-sm" id="modalClose">ปิด</button>
+      </div>
+      <div class="modal-body" id="modalBody"></div>
+    </div>
+  </div>
 
-    async function load() {
-      showErr('');
-      try {
-        const [sum, acc, daily, logs] = await Promise.all([
-          api('/admin/api/summary'),
-          api('/admin/api/accounts'),
-          api('/admin/api/daily?limit=30'),
-          api('/admin/api/logs?limit=20'),
-        ]);
-        renderSummary(sum);
-        document.getElementById('accounts').innerHTML = acc.accounts.map((a) => {
-          const ok = a.approved === 1;
-          return `<tr>
-            <td>${a.account_login}</td>
-            <td>${a.account_name || '—'}</td>
-            <td>${a.account_company || '—'}</td>
-            <td style="color:${ok ? 'var(--ok)' : 'var(--bad)'}">${ok ? 'YES' : 'NO'}</td>
-            <td>${(a.expire_iso || '').slice(0, 10)}</td>
-            <td><button class="${ok ? 'off' : ''}" onclick="toggleApproved('${a.account_login}', ${ok})">${ok ? 'ปิด' : 'เปิด'}</button></td>
-          </tr>`;
-        }).join('');
-        document.getElementById('daily').innerHTML = daily.rows.map((r) =>
-          `<tr><td>${r.date_gmt}</td><td>${r.account_login}</td><td>${r.ea_name}</td><td>${r.balance}</td><td>${r.equity}</td><td>${r.profit}</td></tr>`
-        ).join('');
-        document.getElementById('logs').innerHTML = logs.rows.map((r) =>
-          `<tr><td>${r.date_gmt}</td><td>${r.account_login}</td><td>${r.ea_name}</td><td>${r.line_count}</td><td><code>${r.file_path}</code></td></tr>`
-        ).join('');
-      } catch (e) {
-        showErr('โหลดไม่สำเร็จ: ' + e.message + ' — ตรวจสอบรหัส admin และว่า server รันอยู่');
-      }
-    }
-
-    load();
-  </script>
+  <script src="/admin.js"></script>
 </body>
 </html>

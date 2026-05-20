@@ -17,13 +17,19 @@ const INSTALL_TRIAL_DAYS = Number(process.env.INSTALL_TRIAL_DAYS || 7);
 const LIFETIME_EXPIRE_ISO = process.env.LIFETIME_EXPIRE_ISO || '2099-12-31T23:59:59Z';
 const DB_PATH = process.env.DATABASE_PATH || './data/platform.json';
 const LOGS_DIR = path.join(__dirname, 'data', 'logs');
+/** ถือว่า EA ยังออนไลน์ถ้ามีการเชื่อมต่อภายในกี่ชม. */
+const ONLINE_HOURS = Number(process.env.ONLINE_HOURS || 36);
+const EA_DOWNLOAD_URL = process.env.EA_DOWNLOAD_URL || '/downloads/Arbi_Gen5.ex5';
+const EA_FILE_NAME = process.env.EA_FILE_NAME || 'Arbi_Gen5.ex5';
+const EA_DISPLAY_VERSION = process.env.EA_DISPLAY_VERSION || '1.00';
+const DOWNLOADS_DIR = path.join(__dirname, 'public', 'downloads');
 
 const db = openDatabase(path.resolve(__dirname, DB_PATH));
 if (!fs.existsSync(LOGS_DIR)) fs.mkdirSync(LOGS_DIR, { recursive: true });
+if (!fs.existsSync(DOWNLOADS_DIR)) fs.mkdirSync(DOWNLOADS_DIR, { recursive: true });
 
 const app = express();
 app.use(express.json({ limit: '32mb' }));
-app.use(express.static(path.join(__dirname, 'public')));
 
 // --- helpers ---
 function num(v, fallback = 0) {
@@ -93,12 +99,40 @@ function syncExpiryPolicy(login) {
   }
 }
 
+function detectAccountClass(q, existing) {
+  const raw = str(q.account_class || q.account_type).toLowerCase();
+  if (raw === 'cent' || raw === 'micro') return 'cent';
+  if (raw === 'standard' || raw === 'std') return 'standard';
+  const hay = `${q.account_server || ''} ${q.account_name || ''} ${q.account_company || ''}`.toLowerCase();
+  if (/\b(cent|micro|mini)\b/.test(hay)) return 'cent';
+  const bal = num(q.account_balance);
+  const cur = str(q.account_currency).toUpperCase();
+  if (bal >= 50000 && (cur === 'USD' || cur === 'USC')) return 'cent';
+  return (existing && existing.account_class) || 'standard';
+}
+
+function accountMetaFromQuery(q, existing) {
+  const now = new Date().toISOString();
+  return {
+    account_name: str(q.account_name),
+    account_company: str(q.account_company),
+    account_server: str(q.account_server),
+    account_currency: str(q.account_currency),
+    account_class: detectAccountClass(q, existing),
+    last_balance: num(q.account_balance),
+    last_equity: num(q.account_equity),
+    last_profit: num(q.account_profit),
+    updated_at: now,
+  };
+}
+
 function upsertAccountFromQuery(q) {
   const login = str(q.account_login);
   if (!login) return null;
 
   const now = new Date().toISOString();
   const existing = getAccount(login);
+  const meta = accountMetaFromQuery(q, existing);
 
   if (!existing) {
     const expireTrial = defaultExpireIso(INSTALL_TRIAL_DAYS);
@@ -107,26 +141,100 @@ function upsertAccountFromQuery(q) {
       VALUES (?, ?, ?, 0, ?, 'auto_created', ?)
     `).run(
       login,
-      str(q.account_name),
-      str(q.account_company),
+      meta.account_name,
+      meta.account_company,
       expireTrial,
       'auto_created',
       now,
       now,
     );
+    db.patchAccount(login, { ...meta, first_seen_at: now });
+    syncExpiryPolicy(login);
     return getAccount(login);
   }
 
   if (!existing.first_seen_at) {
-    db.patchAccount(login, { first_seen_at: now });
+    meta.first_seen_at = now;
   }
 
-  db.prepare(`
-    UPDATE accounts SET account_name = ?, account_company = ?, updated_at = ? WHERE account_login = ?
-  `).run(str(q.account_name), str(q.account_company), now, login);
-
+  db.patchAccount(login, meta);
   syncExpiryPolicy(login);
   return getAccount(login);
+}
+
+function buildPublicStats() {
+  const today = todayYmdGmt();
+  const now = Date.now();
+  const onlineMs = ONLINE_HOURS * 3600 * 1000;
+  const accounts = db.prepare('SELECT * FROM accounts ORDER BY updated_at DESC').all();
+  const todayRows = db.prepare('SELECT * FROM daily_snapshots WHERE date_gmt = ?').all(today);
+
+  const latestToday = new Map();
+  for (const r of todayRows) {
+    latestToday.set(String(r.account_login), r);
+  }
+
+  const out = {
+    date_gmt: today,
+    updated_at: new Date().toISOString(),
+    online_hours: ONLINE_HOURS,
+    customers_online: 0,
+    accounts_running: 0,
+    accounts_approved: 0,
+    accounts_total: accounts.length,
+    reported_today: latestToday.size,
+    standard: { accounts: 0, balance: 0, equity: 0, profit: 0 },
+    cent: { accounts: 0, balance: 0, equity: 0, profit: 0 },
+    totals: { balance: 0, equity: 0, profit: 0 },
+  };
+
+  for (const acc of accounts) {
+    const login = String(acc.account_login);
+    const updated = acc.updated_at ? new Date(acc.updated_at).getTime() : 0;
+    const snap = latestToday.get(login);
+    const isOnline = now - updated < onlineMs || !!snap;
+
+    if (isApproved(acc)) out.accounts_approved += 1;
+    if (!isOnline) continue;
+
+    out.customers_online += 1;
+    const st = accountLicenseStatus(acc);
+    if (st.can_use_ea) out.accounts_running += 1;
+
+    const cls = str(acc.account_class || snap?.account_class || 'standard').toLowerCase() === 'cent' ? 'cent' : 'standard';
+    const bal = snap ? num(snap.balance) : num(acc.last_balance);
+    const eq = snap ? num(snap.equity) : num(acc.last_equity);
+    const pr = snap ? num(snap.profit) : num(acc.last_profit);
+
+    const bucket = out[cls];
+    bucket.accounts += 1;
+    bucket.balance += bal;
+    bucket.equity += eq;
+    bucket.profit += pr;
+    out.totals.balance += bal;
+    out.totals.equity += eq;
+    out.totals.profit += pr;
+  }
+
+  return out;
+}
+
+function accountLicenseStatus(acc) {
+  const approved = isApproved(acc);
+  const exp = acc && acc.expire_iso ? new Date(acc.expire_iso) : null;
+  const now = new Date();
+  if (approved) {
+    const lifetime = (acc.expire_iso || '').startsWith('2099');
+    return {
+      key: 'approved',
+      label: lifetime ? 'ใช้งานได้ — อนุมัติแล้ว (ตลอดอายุ)' : 'ใช้งานได้ — อนุมัติแล้ว',
+      can_use_ea: true,
+    };
+  }
+  if (exp && exp > now) {
+    return { key: 'trial', label: 'ทดลองใช้งาน — รอการอนุมัติ', can_use_ea: true };
+  }
+  return { key: 'expired', label: 'หมดอายุหรือถูกปิด — ติดต่อผู้ดูแล', can_use_ea: false };
 }
 
 function legacyLicenseResponse(acc) {
@@ -146,7 +254,7 @@ app.get('/', eaAuth, (req, res) => {
     return res.json({
       ok: true,
       service: 'ea-platform-server',
-      endpoints: ['GET ?action=license', 'GET ?action=daily', 'POST JSON action=logs', '/admin.html'],
+      endpoints: ['GET ?action=license', 'GET ?action=daily', 'POST JSON action=logs', '/admin.html', '/panel.html'],
     });
   }
   if (action === 'license') return handleLicense(req, res);
@@ -172,6 +280,8 @@ function handleDaily(req, res) {
   const dateGmt = parseInt(req.query.date_gmt || todayYmdGmt(), 10);
   const now = new Date().toISOString();
 
+  const acc = upsertAccountFromQuery(req.query);
+  const cls = acc ? acc.account_class : detectAccountClass(req.query, null);
   db.prepare(`
     INSERT INTO daily_snapshots (date_gmt, account_login, ea_name, balance, equity, profit, currency, company, recorded_at)
     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
@@ -185,9 +295,9 @@ function handleDaily(req, res) {
     str(req.query.account_currency),
     str(req.query.account_company),
     now,
+    cls,
   );
 
-  upsertAccountFromQuery(req.query);
   res.json({ ok: true, saved: true });
 }
 
@@ -323,8 +433,31 @@ app.get('/admin/api/logs', adminAuth, (req, res) => {
   res.json({ ok: true, rows });
 });
 
+/** หน้าโปรโมต — สรุปรวมเท่านั้น ไม่เปิดเผยเลขบัญชี */
+app.get('/panel/api/stats', (req, res) => {
+  res.json({ ok: true, stats: buildPublicStats() });
+});
+
+app.get('/panel/api/info', (req, res) => {
+  const localFile = path.join(DOWNLOADS_DIR, EA_FILE_NAME);
+  const hasFile = fs.existsSync(localFile);
+  res.json({
+    ok: true,
+    ea_name: 'Arbi_Gen5',
+    version: EA_DISPLAY_VERSION,
+    file_name: EA_FILE_NAME,
+    download_url: EA_DOWNLOAD_URL,
+    download_available: hasFile || !!EA_DOWNLOAD_URL,
+  });
+});
+
+app.use(express.static(path.join(__dirname, 'public')));
+
 app.listen(PORT, HOST, () => {
   console.log(`EA Platform server http://${HOST}:${PORT}`);
-  console.log(`Admin UI: http://<VPS_IP>:${PORT}/admin.html`);
+  console.log(`Admin UI:  http://<host>:${PORT}/admin.html`);
+  console.log(`Panel:     http://<host>:${PORT}/panel.html`);
+  console.log(`Download:  http://<host>:${PORT}/panel-download.html`);
+  console.log(`Install:   http://<host>:${PORT}/panel-install.html`);
   if (!API_KEY) console.warn('WARN: API_KEY empty — set in .env for production');
 });

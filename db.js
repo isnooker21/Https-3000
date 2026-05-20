@@ -44,6 +44,11 @@ function accountRow(login, store) {
     expire_iso: a.expire_iso || '',
     first_seen_at: a.first_seen_at || a.updated_at || '',
     notes: a.notes || '',
+    account_class: a.account_class || 'standard',
+    account_server: a.account_server || '',
+    account_currency: a.account_currency || '',
+    last_balance: a.last_balance != null ? a.last_balance : 0,
+    last_equity: a.last_equity != null ? a.last_equity : 0,
     updated_at: a.updated_at || '',
   };
 }
@@ -173,6 +178,7 @@ class Statement {
         currency: params[6],
         company: params[7],
         recorded_at: params[8],
+        account_class: params[9] || 'standard',
       });
     } else if (sql.includes('INSERT INTO log_uploads')) {
       s._seq.log_uploads += 1;
