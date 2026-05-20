@@ -11,8 +11,10 @@ const API_KEY = process.env.API_KEY || '';
 const ADMIN_USER = process.env.ADMIN_USER || 'admin';
 const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || '';
 const DEFAULT_TRIAL_DAYS = Number(process.env.DEFAULT_TRIAL_DAYS || 7);
-const TRIAL_DAYS_APPROVED = Number(process.env.TRIAL_DAYS_APPROVED || 7);
-const UNAPPROVED_GRACE_DAYS = Number(process.env.UNAPPROVED_GRACE_DAYS || 1);
+/** ลูกค้าติดตั้งใหม่ (ยังไม่กดเปิด): ใช้ได้กี่วันจาก first_seen */
+const INSTALL_TRIAL_DAYS = Number(process.env.INSTALL_TRIAL_DAYS || 7);
+/** กดเปิดแล้ว: หมดอายุชั่วคราว (EA อ่านเป็น approved=true) */
+const LIFETIME_EXPIRE_ISO = process.env.LIFETIME_EXPIRE_ISO || '2099-12-31T23:59:59Z';
 const DB_PATH = process.env.DATABASE_PATH || './data/platform.json';
 const LOGS_DIR = path.join(__dirname, 'data', 'logs');
 
@@ -69,21 +71,20 @@ function isApproved(acc) {
   return acc && (acc.approved === 1 || acc.approved === true);
 }
 
-/** ไม่กดเปิด: หมดอายุ first_seen + 1 วัน | กดเปิด: +7 วันจากวันอนุมัติ */
+/** ยังไม่กดเปิด: ไม่เกิน first_seen + INSTALL_TRIAL_DAYS | กดเปิดแล้ว: ไม่แตะ expire */
 function syncExpiryPolicy(login) {
   const key = str(login);
   const row = db.prepare('SELECT * FROM accounts WHERE account_login = ?').get(key);
   if (!row) return;
 
-  const now = new Date();
-  const firstSeen = row.first_seen_at ? new Date(row.first_seen_at) : now;
-
   if (isApproved(row)) {
     return;
   }
 
+  const now = new Date();
+  const firstSeen = row.first_seen_at ? new Date(row.first_seen_at) : now;
   const cap = new Date(firstSeen);
-  cap.setUTCDate(cap.getUTCDate() + UNAPPROVED_GRACE_DAYS);
+  cap.setUTCDate(cap.getUTCDate() + INSTALL_TRIAL_DAYS);
   const capIso = cap.toISOString().replace(/\.\d{3}Z$/, 'Z');
 
   const current = row.expire_iso ? new Date(row.expire_iso) : cap;
@@ -100,7 +101,7 @@ function upsertAccountFromQuery(q) {
   const existing = getAccount(login);
 
   if (!existing) {
-    const expireUnapproved = defaultExpireIso(UNAPPROVED_GRACE_DAYS);
+    const expireTrial = defaultExpireIso(INSTALL_TRIAL_DAYS);
     db.prepare(`
       INSERT INTO accounts (account_login, account_name, account_company, approved, expire_iso, notes, updated_at)
       VALUES (?, ?, ?, 0, ?, 'auto_created', ?)
@@ -108,7 +109,7 @@ function upsertAccountFromQuery(q) {
       login,
       str(q.account_name),
       str(q.account_company),
-      expireUnapproved,
+      expireTrial,
       'auto_created',
       now,
       now,
@@ -279,12 +280,17 @@ app.patch('/admin/api/accounts/:login', adminAuth, express.json(), (req, res) =>
     const patch = {
       approved: !!approved,
       updated_at: now,
-      notes: approved ? 'approved_by_admin' : 'locked_by_admin',
+      notes: approved ? 'approved_lifetime' : 'locked_by_admin',
     };
     if (approved) {
-      patch.expire_iso = defaultExpireIso(TRIAL_DAYS_APPROVED);
+      patch.expire_iso = LIFETIME_EXPIRE_ISO;
     } else {
-      patch.expire_iso = defaultExpireIso(UNAPPROVED_GRACE_DAYS);
+      const row = getAccount(login);
+      const firstSeen = row && row.first_seen_at ? new Date(row.first_seen_at) : new Date();
+      const end = new Date(firstSeen);
+      end.setUTCDate(end.getUTCDate() + INSTALL_TRIAL_DAYS);
+      const nowDt = new Date();
+      patch.expire_iso = (nowDt < end ? end : nowDt).toISOString().replace(/\.\d{3}Z$/, 'Z');
     }
     db.patchAccount(login, patch);
   }
