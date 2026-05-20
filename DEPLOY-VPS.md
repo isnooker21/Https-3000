@@ -120,7 +120,7 @@ curl "http://YOUR_VPS_IP:3000/?action=license&account_login=12345678&account_nam
 
 ## Log เก็บที่ไหน
 
-- SQLite: `/opt/ea-platform-server/data/platform.db`
+- Database (JSON): `data/platform.json` — no Visual Studio / native build required on Windows
 - CSV ดิบ: `/opt/ea-platform-server/data/logs/YYYYMMDD/`
 
 ---

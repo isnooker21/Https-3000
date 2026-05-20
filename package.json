@@ -1,17 +1,16 @@
 {
   "name": "ea-platform-server",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "EA license, daily snapshots, ML log storage — VPS API for MQL5 EaPlatformClient",
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
-    "dev": "node --watch server.js"
+    "dev": "node server.js"
   },
   "engines": {
-    "node": ">=18"
+    "node": ">=16"
   },
   "dependencies": {
-    "better-sqlite3": "^11.7.0",
     "dotenv": "^16.4.7",
     "express": "^4.21.2"
   }

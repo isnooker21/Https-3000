@@ -11,7 +11,7 @@ const API_KEY = process.env.API_KEY || '';
 const ADMIN_USER = process.env.ADMIN_USER || 'admin';
 const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || '';
 const DEFAULT_TRIAL_DAYS = Number(process.env.DEFAULT_TRIAL_DAYS || 7);
-const DB_PATH = process.env.DATABASE_PATH || './data/platform.db';
+const DB_PATH = process.env.DATABASE_PATH || './data/platform.json';
 const LOGS_DIR = path.join(__dirname, 'data', 'logs');
 
 const db = openDatabase(path.resolve(__dirname, DB_PATH));
