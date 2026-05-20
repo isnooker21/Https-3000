@@ -465,3 +465,4 @@ app.listen(PORT, HOST, () => {
   console.log(`Install:   http://<host>:${PORT}/panel-install.html`);
   if (!API_KEY) console.warn('WARN: API_KEY empty — set in .env for production');
 });
+
