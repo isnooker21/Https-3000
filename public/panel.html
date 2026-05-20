@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Arbi Gen5 — สถิติชุมชนเทรดเดอร์</title>
+  <link rel="stylesheet" href="/panel.css" />
+</head>
+<body>
+  <div class="wrap">
+    <nav class="panel-nav" id="panelNav" aria-label="เมนูหลัก"></nav>
+    <header class="hero">
+      <p class="hero-tag">EA Platform · Live Community</p>
+      <h1>เทรดเดอร์ที่ใช้ <span class="accent">Arbi Gen5</span> ตอนนี้</h1>
+      <p class="hero-sub">สถิติรวมแบบไม่ระบุตัวตน — อัปเดตจาก EA ที่เชื่อมต่อเซิร์ฟเวอร์</p>
+    </header>
+
+    <div id="err" class="alert alert-error" hidden></div>
+
+    <section class="live-row" id="liveRow">
+      <div class="live-card pulse">
+        <div class="live-num" id="statOnline">—</div>
+        <div class="live-label">ลูกค้าออนไลน์</div>
+      </div>
+      <div class="live-card">
+        <div class="live-num" id="statRunning">—</div>
+        <div class="live-label">บัญชีที่รัน EA</div>
+      </div>
+      <div class="live-card">
+        <div class="live-num" id="statReported">—</div>
+        <div class="live-label">รายงานวันนี้ (GMT)</div>
+      </div>
+    </section>
+
+    <section class="card">
+      <h2>ยอดรวมทั้งระบบ (บัญชีออนไลน์)</h2>
+      <div class="kpi-row" id="totalsRow"></div>
+    </section>
+
+    <section class="split-grid">
+      <div class="card type-card std">
+        <div class="type-head">
+          <span class="type-badge">Standard</span>
+          <span class="type-count" id="stdCount">0 บัญชี</span>
+        </div>
+        <div class="type-metrics" id="stdMetrics"></div>
+      </div>
+      <div class="card type-card cent">
+        <div class="type-head">
+          <span class="type-badge">Cent</span>
+          <span class="type-count" id="centCount">0 บัญชี</span>
+        </div>
+        <div class="type-metrics" id="centMetrics"></div>
+        <p class="type-note">* ยอด Cent แสดงตามหน่วยในบัญชี Cent ของโบรกเกอร์</p>
+      </div>
+    </section>
+
+    <section class="card" style="text-align:center;padding:1.5rem">
+      <p style="margin:0 0 1rem;color:var(--muted)">พร้อมเริ่มใช้งาน?</p>
+      <a href="/panel-download.html" class="btn-download" style="margin-right:0.5rem">ดาวน์โหลด EA</a>
+      <a href="/panel-install.html" class="btn-download" style="background:var(--card);color:var(--text);border:1px solid var(--border)">วิธีติดตั้ง</a>
+    </section>
+
+    <p class="privacy">
+      เราไม่แสดงเลขบัญชีหรือข้อมูลส่วนตัวของลูกค้าท่านอื่น — เห็นเฉพาะตัวเลขสรุปรวมเพื่อความน่าเชื่อถือของระบบ
+    </p>
+
+    <p class="footer">
+      อัปเดตล่าสุด: <span id="lastUpdate">—</span> ·
+      ถือว่าออนไลน์ภายใน <span id="onlineHours">36</span> ชม. หลัง EA เชื่อมต่อ
+    </p>
+  </div>
+
+  <script src="/panel-common.js"></script>
+  <script src="/panel-fetch.js"></script>
+  <script src="/panel.js"></script>
+</body>
+</html>

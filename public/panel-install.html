@@ -1,0 +1,92 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>วิธีติดตั้ง Arbi Gen5</title>
+  <link rel="stylesheet" href="/panel.css" />
+</head>
+<body>
+  <div class="wrap">
+    <nav class="panel-nav" id="panelNav"></nav>
+
+    <header class="page-title">
+      <h1>วิธีติดตั้ง <span class="accent">Arbi Gen5</span></h1>
+      <p>ตั้งค่าครั้งเดียว — ลูกค้าไม่ต้องใส่ URL หรือรหัสผ่าน</p>
+    </header>
+
+    <div class="warn-box">
+      <strong>บัญชีต้องเป็นโหมด Hedging</strong> — ถ้าเป็น Netting EA จะไม่ทำงาน
+    </div>
+
+    <section class="card">
+      <h2>ขั้นตอนติดตั้ง</h2>
+      <ol class="steps">
+        <li>
+          <strong>ดาวน์โหลดไฟล์</strong>
+          <div class="sub">ได้ <code>Arbi_Gen5.ex5</code> จาก <a href="/panel-download.html" style="color:var(--accent)">หน้าดาวน์โหลด</a></div>
+        </li>
+        <li>
+          <strong>คัดลอกไฟล์เข้าโฟลเดอร์ Experts</strong>
+          <div class="sub">
+            เปิด MT5 → เมนู File → Open Data Folder → MQL5 → Experts<br />
+            วางไฟล์ <code>Arbi_Gen5.ex5</code> ลงในโฟลเดอร์ Experts (หรือ Experts ย่อย)
+          </div>
+        </li>
+        <li>
+          <strong>รีเฟรช Navigator</strong>
+          <div class="sub">คลิกขวาที่ Navigator → Refresh — จะเห็น Arbi_Gen5 ภายใต้ Expert Advisors</div>
+        </li>
+        <li>
+          <strong>เปิดการตั้งค่า Expert Advisors</strong>
+          <div class="sub">
+            Tools → Options → Expert Advisors แล้วเปิด:
+            <ul class="check-list">
+              <li>Allow algorithmic trading</li>
+              <li><strong>Allow DLL imports</strong> (จำเป็น — ใช้เชื่อมต่อเซิร์ฟเวอร์ license)</li>
+            </ul>
+            ไม่จำเป็นต้องใส่ WebRequest URL ถ้าใช้ DLL ได้
+          </div>
+        </li>
+        <li>
+          <strong>ลาก EA ลงชาร์ต</strong>
+          <div class="sub">
+            ลาก Arbi_Gen5 ไปที่ชาร์ตใดก็ได้ (แนะนำ symbol หลักของบัญชี)<br />
+            ในหน้าต่าง Inputs <strong>ไม่ต้องแก้ URL หรือ API key</strong> — ฝังมาจากผู้พัฒนาแล้ว
+          </div>
+        </li>
+        <li>
+          <strong>อนุญาตการเทรดอัตโนมัติบนชาร์ต</strong>
+          <div class="sub">กดปุ่ม AutoTrading ให้เป็นสีเขียว และอนุญาตเมื่อ EA ถามสิทธิ์</div>
+        </li>
+        <li>
+          <strong>ตรวจสอบในแท็บ Experts</strong>
+          <div class="sub">
+            ควรเห็นข้อความประมาณ <em>EaPlatform: license approved</em> หรือ <em>trial until …</em><br />
+            EA จะตรวจ license วันละครั้ง — ถ้าถูกปิดจากผู้ดูแลจะถอนตัวออกจากชาร์ตอัตโนมัติ
+          </div>
+        </li>
+      </ol>
+    </section>
+
+    <section class="card">
+      <h2>แก้ปัญหาเบื้องต้น</h2>
+      <ul class="check-list" style="list-style:disc">
+        <li><strong>INIT_FAILED / DLL</strong> — เปิด Allow DLL imports แล้ว restart MT5</li>
+        <li><strong>ไม่ใช่ Hedging</strong> — เปลี่ยนบัญชีหรือโบรกเกอร์ที่รองรับ hedging</li>
+        <li><strong>Strategy Tester</strong> — Arbi_Gen5 ใช้ได้เฉพาะ live เท่านั้น</li>
+        <li><strong>หมด trial / ถูกปิด</strong> — ติดต่อผู้ดูแลเพื่อเปิดสิทธิ์บนระบบ</li>
+      </ul>
+    </section>
+
+    <p class="footer">
+      <a href="/panel-download.html" style="color:var(--accent)">ดาวน์โหลด EA</a>
+      ·
+      <a href="/panel.html" style="color:var(--accent)">หน้าสถิติ</a>
+    </p>
+  </div>
+
+  <script src="/panel-common.js"></script>
+  <script>PanelNav.render('install');</script>
+</body>
+</html>

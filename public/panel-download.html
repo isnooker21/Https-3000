@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>ดาวน์โหลด Arbi Gen5</title>
+  <link rel="stylesheet" href="/panel.css" />
+</head>
+<body>
+  <div class="wrap">
+    <nav class="panel-nav" id="panelNav"></nav>
+
+    <header class="page-title">
+      <h1>ดาวน์โหลด <span class="accent">Arbi Gen5</span></h1>
+      <p>ไฟล์ Expert Advisor สำหรับ MetaTrader 5</p>
+    </header>
+
+    <div id="err" class="alert alert-error" hidden></div>
+
+    <section class="card" style="text-align:center">
+      <p style="margin:0 0 0.5rem;color:var(--muted);font-size:0.85rem">เวอร์ชัน</p>
+      <p style="margin:0;font-size:2rem;font-weight:800" id="eaVersion">—</p>
+      <p style="margin:0.5rem 0 1.25rem;color:var(--muted);font-size:0.88rem" id="eaFileName">Arbi_Gen5.ex5</p>
+      <a href="#" class="btn-download" id="btnDownload" download>ดาวน์โหลดไฟล์ .ex5</a>
+      <p class="sub" style="margin-top:1.25rem;font-size:0.8rem;color:var(--muted)" id="dlHint">
+        หลังดาวน์โหลด ไปที่ <a href="/panel-install.html" style="color:var(--accent)">วิธีติดตั้ง</a>
+      </p>
+    </section>
+
+    <section class="card">
+      <h2>ก่อนดาวน์โหลด</h2>
+      <ul class="check-list">
+        <li>ใช้บัญชี <strong>Hedging</strong> (จำเป็นสำหรับ Arbi Gen5)</li>
+        <li>MetaTrader 5 บน Windows หรือ Mac (Wine)</li>
+        <li>ไม่ต้องตั้งค่า URL หรือ API — ฝังในไฟล์แล้ว</li>
+      </ul>
+    </section>
+
+    <p class="footer">
+      <a href="/panel.html" style="color:var(--accent)">← กลับหน้าสถิติ</a>
+    </p>
+  </div>
+
+  <script src="/panel-common.js"></script>
+  <script src="/panel-fetch.js"></script>
+  <script src="/panel-download.js"></script>
+</body>
+</html>
