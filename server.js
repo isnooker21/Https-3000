@@ -1,15 +1,39 @@
-require('dotenv').config();
+const path = require('path');
+const fs = require('fs');
+
+/** โหลด .env บน Windows (ตัด BOM / ช่องว่าง) */
+function loadEnvFile() {
+  const envPath = path.join(__dirname, '.env');
+  if (!fs.existsSync(envPath)) return;
+  let raw = fs.readFileSync(envPath, 'utf8');
+  if (raw.charCodeAt(0) === 0xfeff) raw = raw.slice(1);
+  for (const line of raw.split(/\r?\n/)) {
+    const t = line.trim();
+    if (!t || t.startsWith('#')) continue;
+    const eq = t.indexOf('=');
+    if (eq < 0) continue;
+    const key = t.slice(0, eq).trim();
+    let val = t.slice(eq + 1).trim();
+    if (
+      (val.startsWith('"') && val.endsWith('"')) ||
+      (val.startsWith("'") && val.endsWith("'"))
+    ) {
+      val = val.slice(1, -1);
+    }
+    process.env[key] = val;
+  }
+}
+loadEnvFile();
+require('dotenv').config({ path: path.join(__dirname, '.env'), override: false });
 
 const express = require('express');
-const fs = require('fs');
-const path = require('path');
 const { openDatabase, defaultExpireIso, todayYmdGmt } = require('./db');
 
 const PORT = Number(process.env.PORT || 3000);
 const HOST = process.env.HOST || '0.0.0.0';
-const API_KEY = process.env.API_KEY || '';
-const ADMIN_USER = process.env.ADMIN_USER || 'admin';
-const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || '';
+const API_KEY = (process.env.API_KEY || '').trim();
+const ADMIN_USER = (process.env.ADMIN_USER || 'admin').trim();
+const ADMIN_PASSWORD = (process.env.ADMIN_PASSWORD || '').trim();
 /** ยังไม่กดเปิด: ทดลอง INSTALL_TRIAL_DAYS วันจาก first_seen | กดเปิด: ตลอดอายุ */
 const INSTALL_TRIAL_DAYS = Number(process.env.INSTALL_TRIAL_DAYS || 7);
 /** กดเปิดแล้ว: หมดอายุชั่วคราว (EA อ่านเป็น approved=true) */
@@ -62,7 +86,9 @@ function adminAuth(req, res, next) {
     return res.status(401).send('Authentication required');
   }
   const decoded = Buffer.from(auth.slice(6), 'base64').toString('utf8');
-  const [user, pass] = decoded.split(':');
+  const colon = decoded.indexOf(':');
+  const user = colon >= 0 ? decoded.slice(0, colon) : decoded;
+  const pass = colon >= 0 ? decoded.slice(colon + 1) : '';
   if (user === ADMIN_USER && pass === ADMIN_PASSWORD) return next();
   res.set('WWW-Authenticate', 'Basic realm="EA Platform Admin"');
   return res.status(401).send('Invalid credentials');
@@ -362,6 +388,17 @@ function handleDashboard(req, res) {
 }
 
 // --- Admin API ---
+/** หน้า login แบบฟอร์ม (ไม่ใช้ popup Basic ของเบราว์เซอร์) */
+app.post('/admin/api/login', express.json(), (req, res) => {
+  const user = str(req.body && req.body.user).trim();
+  const password = str(req.body && req.body.password);
+  if (!ADMIN_PASSWORD) return res.json({ ok: true });
+  if (user === ADMIN_USER && password === ADMIN_PASSWORD) {
+    return res.json({ ok: true, user: ADMIN_USER });
+  }
+  return res.status(401).json({ ok: false, error: 'ชื่อผู้ใช้หรือรหัสผ่านไม่ถูกต้อง' });
+});
+
 app.get('/admin/api/summary', adminAuth, (req, res) => {
   const today = todayYmdGmt();
   const accounts = db.prepare('SELECT COUNT(*) AS c FROM accounts').get().c;
@@ -437,6 +474,70 @@ app.get('/admin/api/logs', adminAuth, (req, res) => {
   res.json({ ok: true, rows });
 });
 
+const BACKUPS_DIR = path.join(__dirname, 'data', 'backups');
+if (!fs.existsSync(BACKUPS_DIR)) fs.mkdirSync(BACKUPS_DIR, { recursive: true });
+
+/** สำรองข้อมูลลูกค้า — ดาวน์โหลด JSON ก่อนย้าย VPS */
+app.get('/admin/api/backup/export', adminAuth, (req, res) => {
+  const includeDaily = req.query.include_daily === '1' || req.query.include_daily === 'true';
+  const includeLogs = req.query.include_logs === '1' || req.query.include_logs === 'true';
+  const payload = db.exportBackup({ includeDaily, includeLogs });
+  const stamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
+  const filename = `ea-platform-backup-${stamp}.json`;
+  res.setHeader('Content-Type', 'application/json; charset=utf-8');
+  res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+  res.send(JSON.stringify(payload, null, 2));
+});
+
+/** นำเข้าข้อมูลลูกคชา — คงสถานะอนุมัติหลังย้าย server */
+app.post('/admin/api/backup/import', adminAuth, (req, res) => {
+  const body = req.body || {};
+  const payload = body.backup || body;
+  let accounts = payload.accounts;
+
+  if (!accounts || typeof accounts !== 'object') {
+    const keys = Object.keys(payload).filter((k) => !k.startsWith('_') && k !== 'format' && k !== 'version');
+    if (keys.length && payload[keys[0]] && typeof payload[keys[0]] === 'object' && ('approved' in payload[keys[0]] || 'expire_iso' in payload[keys[0]])) {
+      accounts = payload;
+    }
+  }
+
+  if (!accounts || typeof accounts !== 'object' || !Object.keys(accounts).length) {
+    return res.status(400).json({ ok: false, error: 'Invalid backup — need accounts object or ea-platform-backup file' });
+  }
+
+  const includeDaily = !!body.include_daily;
+  const preBackupPath = path.join(BACKUPS_DIR, `pre-import-${Date.now()}.json`);
+  fs.writeFileSync(preBackupPath, JSON.stringify(db.getRawStore(), null, 2), 'utf8');
+
+  try {
+    const result = db.importBackupPayload(payload, { includeDaily });
+    res.json({
+      ok: true,
+      message: 'นำเข้าสำเร็จ — สถานะอนุมัติและวันหมดอายุถูกคืนแล้ว',
+      ...result,
+      pre_import_backup: path.relative(__dirname, preBackupPath),
+    });
+  } catch (e) {
+    return res.status(400).json({ ok: false, error: e.message });
+  }
+});
+
+/** ข้อมูล path ไฟล์ DB (ย้าย server แบบ copy ไฟล์) */
+app.get('/admin/api/backup/info', adminAuth, (req, res) => {
+  const abs = path.resolve(__dirname, DB_PATH);
+  const accounts = db.prepare('SELECT COUNT(*) AS c FROM accounts').get().c;
+  const approved = db.prepare('SELECT COUNT(*) AS c FROM accounts WHERE approved = 1').get().c;
+  res.json({
+    ok: true,
+    database_path: path.relative(__dirname, abs),
+    database_absolute: abs,
+    accounts_total: accounts,
+    accounts_approved: approved,
+    tip: 'ย้าย VPS: ดาวน์โหลดสำรองจากหน้านี้ หรือ copy ไฟล์ data/platform.json ไป server ใหม่',
+  });
+});
+
 /** หน้าโปรโมต — สรุปรวมเท่านั้น ไม่เปิดเผยเลขบัญชี */
 app.get('/panel/api/stats', (req, res) => {
   res.json({ ok: true, stats: buildPublicStats() });
@@ -464,5 +565,6 @@ app.listen(PORT, HOST, () => {
   console.log(`Download:  http://<host>:${PORT}/panel-download.html`);
   console.log(`Install:   http://<host>:${PORT}/panel-install.html`);
   if (!API_KEY) console.warn('WARN: API_KEY empty — set in .env for production');
+  console.log(`Admin login: user="${ADMIN_USER}" password=${ADMIN_PASSWORD ? 'set' : 'empty (no auth)'}`);
 });
 

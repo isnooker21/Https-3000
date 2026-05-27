@@ -1,0 +1,35 @@
+# Render Blueprint — https://render.com/docs/blueprint-spec
+# ใช้ได้เมื่อ deploy จาก repo GitHub (Root Directory = ea-platform-server ถ้า repo มีโฟลเดอร์ย่อย)
+services:
+  - type: web
+    name: ea-platform
+    runtime: node
+    plan: starter
+    buildCommand: npm install
+    startCommand: npm start
+    healthCheckPath: /health
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: HOST
+        value: 0.0.0.0
+      - key: API_KEY
+        sync: false
+      - key: ADMIN_USER
+        value: isnooker
+      - key: ADMIN_PASSWORD
+        sync: false
+      - key: INSTALL_TRIAL_DAYS
+        value: "7"
+      - key: LIFETIME_EXPIRE_ISO
+        value: "2099-12-31T23:59:59Z"
+      - key: ONLINE_HOURS
+        value: "36"
+      - key: DATABASE_PATH
+        value: ./data/platform.json
+      - key: EA_DOWNLOAD_URL
+        value: /downloads/Arbi_Gen5.ex5
+    disk:
+      name: ea-platform-data
+      mountPath: /opt/render/project/src/data
+      sizeGB: 1

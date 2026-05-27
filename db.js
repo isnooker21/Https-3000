@@ -221,6 +221,94 @@ class JsonDatabase {
     return true;
   }
 
+  /** สำรองข้อมูลลูกค้า — ใช้ตอนย้าย VPS / เปลี่ยน IP */
+  exportBackup(options = {}) {
+    const includeDaily = !!options.includeDaily;
+    const includeLogs = !!options.includeLogs;
+    const out = {
+      format: 'ea-platform-backup',
+      version: 1,
+      exported_at: new Date().toISOString(),
+      accounts: { ...this.store.accounts },
+    };
+    if (includeDaily) out.daily_snapshots = [...this.store.daily_snapshots];
+    if (includeLogs) out.log_uploads = [...this.store.log_uploads];
+    return out;
+  }
+
+  /**
+   * นำเข้าบัญชีจากไฟล์สำรอง — คง approved / expire / first_seen
+   * ข้อมูลใน backup ชนะสำหรับฟิลด์ license
+   */
+  importAccountsFromBackup(accountsMap) {
+    if (!accountsMap || typeof accountsMap !== 'object') {
+      throw new Error('Invalid accounts data');
+    }
+    let added = 0;
+    let updated = 0;
+    let approvedCount = 0;
+    const now = new Date().toISOString();
+
+    for (const [login, src] of Object.entries(accountsMap)) {
+      const key = String(login);
+      if (!key) continue;
+      const existing = this.store.accounts[key];
+      const approved = src.approved === true || src.approved === 1;
+
+      this.store.accounts[key] = {
+        account_name: src.account_name != null ? src.account_name : (existing?.account_name || ''),
+        account_company: src.account_company != null ? src.account_company : (existing?.account_company || ''),
+        approved,
+        expire_iso: src.expire_iso != null ? src.expire_iso : (existing?.expire_iso || ''),
+        first_seen_at: src.first_seen_at || existing?.first_seen_at || now,
+        notes: src.notes != null ? src.notes : (existing?.notes || ''),
+        account_class: src.account_class || existing?.account_class || 'standard',
+        account_server: src.account_server || existing?.account_server || '',
+        account_currency: src.account_currency || existing?.account_currency || '',
+        last_balance: src.last_balance != null ? src.last_balance : (existing?.last_balance ?? 0),
+        last_equity: src.last_equity != null ? src.last_equity : (existing?.last_equity ?? 0),
+        last_profit: src.last_profit != null ? src.last_profit : (existing?.last_profit ?? 0),
+        updated_at: src.updated_at || existing?.updated_at || now,
+      };
+
+      if (approved) approvedCount += 1;
+      if (existing) updated += 1;
+      else added += 1;
+    }
+
+    this.save();
+    return { added, updated, approved: approvedCount, total: added + updated };
+  }
+
+  importBackupPayload(payload, options = {}) {
+    const includeDaily = !!options.includeDaily;
+    let dailyAdded = 0;
+
+    const accounts = payload.accounts || payload;
+    const accResult = this.importAccountsFromBackup(accounts);
+
+    if (includeDaily && Array.isArray(payload.daily_snapshots)) {
+      const seen = new Set(
+        this.store.daily_snapshots.map((r) => `${r.date_gmt}|${r.account_login}|${r.ea_name}|${r.recorded_at}`),
+      );
+      for (const row of payload.daily_snapshots) {
+        const sig = `${row.date_gmt}|${row.account_login}|${row.ea_name}|${row.recorded_at}`;
+        if (seen.has(sig)) continue;
+        this.store._seq.daily_snapshots += 1;
+        this.store.daily_snapshots.push({ ...row, id: this.store._seq.daily_snapshots });
+        seen.add(sig);
+        dailyAdded += 1;
+      }
+      this.save();
+    }
+
+    return { ...accResult, dailyAdded };
+  }
+
+  getRawStore() {
+    return this.store;
+  }
+
   pragma() {
     /* no-op for compatibility */
   }

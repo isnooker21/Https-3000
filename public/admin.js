@@ -1,5 +1,18 @@
 /* EA Platform Admin — vanilla JS */
 (function () {
+  const AUTH_KEY = 'ea_admin_basic';
+
+  function authHeaders() {
+    const basic = sessionStorage.getItem(AUTH_KEY);
+    if (!basic) return {};
+    return { Authorization: `Basic ${basic}` };
+  }
+
+  if (!sessionStorage.getItem(AUTH_KEY)) {
+    location.replace('/login.html');
+    return;
+  }
+
   const state = {
     summary: null,
     accounts: [],
@@ -58,7 +71,13 @@
   }
 
   async function api(path, opts = {}) {
-    const r = await fetch(path, { credentials: 'include', ...opts });
+    const headers = { ...authHeaders(), ...(opts.headers || {}) };
+    const r = await fetch(path, { credentials: 'include', ...opts, headers });
+    if (r.status === 401) {
+      sessionStorage.removeItem(AUTH_KEY);
+      location.replace('/login.html');
+      throw new Error('กรุณาเข้าสู่ระบบใหม่');
+    }
     if (!r.ok) throw new Error((await r.text()) || r.statusText);
     return r.json();
   }
@@ -287,6 +306,75 @@
     }
   }
 
+  function showBackupResult(msg, ok) {
+    const el = $('#backupResult');
+    el.hidden = !msg;
+    el.textContent = msg;
+    el.className = 'backup-result ' + (ok ? 'backup-ok' : 'backup-err');
+  }
+
+  async function loadBackupInfo() {
+    const el = $('#backupInfo');
+    if (!el) return;
+    try {
+      const j = await api('/admin/api/backup/info');
+      el.textContent = `บัญชี ${j.accounts_total} รายการ · อนุมัติแล้ว ${j.accounts_approved} · ไฟล์: ${j.database_path}`;
+    } catch (e) {
+      el.textContent = 'โหลดข้อมูลสำรองไม่ได้: ' + e.message;
+    }
+  }
+
+  async function exportBackup() {
+    showBackupResult('');
+    try {
+      const daily = $('#backupIncludeDaily')?.checked ? '1' : '0';
+      const r = await fetch(`/admin/api/backup/export?include_daily=${daily}`, { credentials: 'include' });
+      if (!r.ok) throw new Error(await r.text());
+      const blob = await r.blob();
+      const disp = r.headers.get('Content-Disposition') || '';
+      const m = disp.match(/filename="([^"]+)"/);
+      const name = m ? m[1] : `ea-platform-backup-${Date.now()}.json`;
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = name;
+      a.click();
+      URL.revokeObjectURL(url);
+      showBackupResult('ดาวน์โหลดสำรองแล้ว — เก็บไฟล์ไว้ก่อนย้าย VPS', true);
+    } catch (e) {
+      showBackupResult('ดาวน์โหลดไม่สำเร็จ: ' + e.message, false);
+    }
+  }
+
+  async function importBackupFile(file) {
+    if (!file) return;
+    const ok = confirm(
+      'นำเข้าข้อมูลลูกค้าจากไฟล์สำรอง?\n\nบัญชีที่มีในไฟล์จะอัปเดตสถานะ เปิด/ปิด และวันหมดอายุตามไฟล์สำรอง\n(ระบบจะสำรองข้อมูลปัจจุบันก่อนนำเข้าอัตโนมัติ)',
+    );
+    if (!ok) return;
+    showBackupResult('กำลังนำเข้า…', true);
+    try {
+      const text = await file.text();
+      const payload = JSON.parse(text);
+      const includeDaily = !!$('#backupIncludeDaily')?.checked;
+      const j = await api('/admin/api/backup/import', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ backup: payload, include_daily: includeDaily }),
+      });
+      showBackupResult(
+        `${j.message} — เพิ่ม ${j.added}, อัปเดต ${j.updated}, อนุมัติ ${j.approved} บัญชี` +
+          (j.dailyAdded ? `, daily +${j.dailyAdded}` : ''),
+        true,
+      );
+      await load(true);
+      await loadBackupInfo();
+    } catch (e) {
+      showBackupResult('นำเข้าไม่สำเร็จ: ' + e.message, false);
+    }
+    $('#backupImportFile').value = '';
+  }
+
   async function load(silent) {
     if (!silent) showErr('');
     try {
@@ -339,10 +427,16 @@
       if (e.target.id === 'accountModal') closeModal();
     });
     $('#btnHealth').addEventListener('click', checkHealth);
+    $('#btnBackupExport')?.addEventListener('click', exportBackup);
+    $('#backupImportFile')?.addEventListener('change', (e) => {
+      const f = e.target.files && e.target.files[0];
+      if (f) importBackupFile(f);
+    });
   }
 
   initNav();
   initControls();
   load();
   checkHealth();
+  loadBackupInfo();
 })();

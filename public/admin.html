@@ -21,6 +21,7 @@
         <button type="button" data-page="system">ระบบ</button>
       </nav>
       <div class="sidebar-footer">
+        <a href="/login.html?logout=1" style="color:var(--muted);font-size:0.8rem">ออกจากระบบ</a><br />
         <a href="/panel.html" target="_blank" rel="noopener" style="color:var(--accent);font-size:0.8rem">หน้าโปรโมต (สาธารณะ)</a><br />
         อัปเดตล่าสุด:<br />
         <span id="lastRefresh">—</span>
@@ -154,6 +155,28 @@
           <div class="modal-body">
             <p id="healthStatus">กำลังตรวจสอบ…</p>
             <button type="button" class="btn btn-ghost btn-sm" id="btnHealth" style="margin-top:0.75rem">ตรวจสอบอีกครั้ง</button>
+          </div>
+        </div>
+        <div class="panel">
+          <div class="panel-head">สำรอง / ย้าย Server (จำสถานะอนุมัติ)</div>
+          <div class="modal-body backup-panel">
+            <p class="backup-desc">ก่อนย้าย IP/VPS — <strong>ดาวน์โหลดสำรอง</strong> แล้วบน server ใหม่กด <strong>นำเข้า</strong> บัญชีที่เปิด/ปิดและวันหมดอายุจะกลับมาเหมือนเดิม</p>
+            <p id="backupInfo" class="backup-meta">กำลังโหลด…</p>
+            <div class="backup-actions">
+              <label class="backup-check"><input type="checkbox" id="backupIncludeDaily" /> รวมรายงานรายวัน (daily)</label>
+              <div class="backup-btns">
+                <button type="button" class="btn" id="btnBackupExport">ดาวน์โหลดสำรอง (.json)</button>
+                <label class="btn btn-ghost backup-file-btn">
+                  นำเข้าจากไฟล์สำรอง
+                  <input type="file" id="backupImportFile" accept=".json,application/json" hidden />
+                </label>
+              </div>
+            </div>
+            <p id="backupResult" class="backup-result" hidden></p>
+            <details class="backup-details">
+              <summary>วิธีย้ายแบบ copy ไฟล์ (ขั้นสูง)</summary>
+              <p>copy ไฟล์ <code>data/platform.json</code> จาก VPS เก่าไปวางทับบน VPS ใหม่ (หยุด server ก่อน) แล้ว <code>pm2 restart ea-platform</code></p>
+            </details>
           </div>
         </div>
         <div class="panel">
