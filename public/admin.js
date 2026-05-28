@@ -39,6 +39,17 @@
     return iso.slice(0, 10);
   }
 
+  function expireInputValue(iso) {
+    if (!iso) return '';
+    return iso.slice(0, 10);
+  }
+
+  function addDaysYmd(days) {
+    const d = new Date();
+    d.setUTCDate(d.getUTCDate() + days);
+    return d.toISOString().slice(0, 10);
+  }
+
   function fmtDateGmt(ymd) {
     if (!ymd) return '—';
     const s = String(ymd);
@@ -230,7 +241,7 @@
   async function toggleApproved(login, currentlyApproved) {
     if (currentlyApproved) {
       const ok = confirm(
-        `ปิดการใช้งานบัญชี ${login}?\n\nEA จะถอนตัวออกหลังรอบตรวจ license ครั้งถัดไป (~24 ชม.) หรือเร็วกว่าถ้าลูกค้าเปิด EA ใหม่`,
+        `ปิดการใช้งานบัญชี ${login}?\n\nEA จะถอนตัวออกภายใน ~1 ชม. (รอบตรวจ license) หรือทันทีถ้าเปิด EA ใหม่`,
       );
       if (!ok) return;
     }
@@ -246,6 +257,44 @@
     }
   }
 
+  async function saveAccountExpire(login) {
+    const input = $('#expireDateInput');
+    if (!input || !input.value) {
+      alert('กรุณาเลือกวันหมดอายุ');
+      return;
+    }
+    const expire_iso = `${input.value}T23:59:59Z`;
+    try {
+      await api(`/admin/api/accounts/${encodeURIComponent(login)}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ expire_iso }),
+      });
+      closeModal();
+      await load(true);
+      showErr('');
+      alert(`บันทึกวันหมดอายุ ${input.value} แล้ว\n\nEA จะได้รับภายใน ~1 ชม. หรือเมื่อลูกค้าเปิด EA ใหม่`);
+    } catch (e) {
+      showErr('บันทึกวันหมดอายุไม่สำเร็จ: ' + e.message);
+    }
+  }
+
+  function bindExpireEditControls(login) {
+    const input = $('#expireDateInput');
+    if (!input) return;
+
+    $('#btnSaveExpire')?.addEventListener('click', () => saveAccountExpire(login));
+
+    $$('#modalBody [data-exp-preset]').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        const preset = btn.dataset.expPreset;
+        if (preset === 'lifetime') input.value = '2099-12-31';
+        else if (preset === '+7') input.value = addDaysYmd(7);
+        else if (preset === '+30') input.value = addDaysYmd(30);
+      });
+    });
+  }
+
   function openAccountModal(login) {
     const a = state.accounts.find((x) => String(x.account_login) === String(login));
     if (!a) return;
@@ -258,11 +307,24 @@
         <dt>สถานะ</dt><dd><span class="badge ${st.badge}">${esc(st.label)}</span></dd>
         <dt>ชื่อ</dt><dd>${esc(a.account_name || '—')}</dd>
         <dt>Broker</dt><dd>${esc(a.account_company || '—')}</dd>
-        <dt>หมดอายุ</dt><dd>${fmtDate(a.expire_iso)} (GMT)</dd>
+        <dt>หมดอายุปัจจุบัน</dt><dd>${fmtDate(a.expire_iso)} (GMT)</dd>
         <dt>เห็นครั้งแรก</dt><dd>${fmtDate(a.first_seen_at)}</dd>
         <dt>หมายเหตุ</dt><dd>${esc(a.notes || '—')}</dd>
         <dt>ประเภทบัญชี</dt><dd>${esc(a.account_class || 'standard')}</dd>
       </dl>
+      <div class="expire-edit">
+        <h4>ปรับวันหมดอายุ</h4>
+        <div class="expire-edit-row">
+          <input type="date" id="expireDateInput" value="${esc(expireInputValue(a.expire_iso))}" />
+          <button type="button" class="btn btn-sm" id="btnSaveExpire">บันทึก</button>
+        </div>
+        <div class="expire-quick">
+          <button type="button" class="btn btn-sm btn-ghost" data-exp-preset="lifetime">ตลอดอายุ (2099)</button>
+          <button type="button" class="btn btn-sm btn-ghost" data-exp-preset="+7">+7 วัน</button>
+          <button type="button" class="btn btn-sm btn-ghost" data-exp-preset="+30">+30 วัน</button>
+        </div>
+        <p class="expire-hint">EA อ่านจาก server — ไม่ต้อง compile ใหม่ · มีผลภายใน ~1 ชม. หรือเปิด EA ใหม่</p>
+      </div>
       <h4 style="margin:1.25rem 0 0.5rem;font-size:0.9rem">รายงานรายวันล่าสุด</h4>
       ${
         history.length
@@ -274,6 +336,7 @@
           : '<p class="empty" style="padding:1rem">ยังไม่มีรายงาน daily</p>'
       }
     `;
+    bindExpireEditControls(login);
     $('#accountModal').hidden = false;
   }
 

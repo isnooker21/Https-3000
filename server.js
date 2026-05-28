@@ -115,11 +115,22 @@ function trialExpireIso(firstSeenIso) {
   return cap.toISOString().replace(/\.\d{3}Z$/, 'Z');
 }
 
+function normalizeExpireIso(raw) {
+  const s = str(raw).trim();
+  if (!s) return null;
+  if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return `${s}T23:59:59Z`;
+  const d = new Date(s);
+  if (Number.isNaN(d.getTime())) return null;
+  return d.toISOString().replace(/\.\d{3}Z$/, 'Z');
+}
+
 /** ยังไม่กดเปิด: ไม่เกิน first_seen + 7 วัน | กดเปิดแล้ว: ไม่แตะ expire */
 function syncExpiryPolicy(login) {
   const key = str(login);
   const row = db.prepare('SELECT * FROM accounts WHERE account_login = ?').get(key);
   if (!row || isApproved(row)) return;
+  const raw = db.getRawStore().accounts[key];
+  if (raw && raw.expire_manual) return;
 
   const now = new Date();
   const capIso = trialExpireIso(row.first_seen_at);
@@ -446,8 +457,15 @@ app.patch('/admin/api/accounts/:login', adminAuth, express.json(), (req, res) =>
     db.patchAccount(login, patch);
   }
   if (expire_iso !== undefined) {
-    db.prepare('UPDATE accounts SET expire_iso = ?, updated_at = ? WHERE account_login = ?')
-      .run(str(expire_iso), now, login);
+    const normalized = normalizeExpireIso(expire_iso);
+    if (!normalized) {
+      return res.status(400).json({ ok: false, error: 'รูปแบบวันหมดอายุไม่ถูกต้อง (ใช้ YYYY-MM-DD)' });
+    }
+    db.patchAccount(login, {
+      expire_iso: normalized,
+      expire_manual: true,
+      updated_at: now,
+    });
   }
   if (notes !== undefined) {
     db.prepare('UPDATE accounts SET notes = ?, updated_at = ? WHERE account_login = ?')

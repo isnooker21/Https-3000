@@ -346,6 +346,50 @@ td.num { text-align: right; }
 .dl-grid dt { color: var(--muted); margin: 0; }
 .dl-grid dd { margin: 0; }
 
+.expire-edit {
+  margin-top: 1.25rem;
+  padding: 1rem;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+
+.expire-edit h4 {
+  margin: 0 0 0.75rem;
+  font-size: 0.9rem;
+}
+
+.expire-edit-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  align-items: center;
+}
+
+.expire-edit-row input[type="date"] {
+  flex: 1;
+  min-width: 10rem;
+  padding: 0.5rem 0.65rem;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: var(--card);
+  color: var(--text);
+  font: inherit;
+}
+
+.expire-quick {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+  margin-top: 0.65rem;
+}
+
+.expire-hint {
+  margin: 0.65rem 0 0;
+  font-size: 0.78rem;
+  color: var(--muted);
+}
+
 .health-ok { color: var(--ok); }
 .health-bad { color: var(--bad); }
 
